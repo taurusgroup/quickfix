@@ -1,15 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
+	"time"
 
 	"github.com/quickfixgo/quickfix"
-	"github.com/quickfixgo/quickfix/gen/field"
-	"github.com/quickfixgo/quickfix/gen/tag"
+	"github.com/quickfixgo/quickfix/config"
+	field "github.com/quickfixgo/quickfix/gen/field"
+	tag "github.com/quickfixgo/quickfix/gen/tag"
+	"github.com/quickfixgo/quickfix/store/file"
+	"github.com/quickfixgo/quickfix/store/mongo"
 )
 
 var router *quickfix.MessageRouter = quickfix.NewMessageRouter()
@@ -57,7 +64,8 @@ func (e *EchoApplication) processMsg(msg *quickfix.Message, sessionID quickfix.S
 		}
 
 		sessionOrderID := sessionID.String() + orderID.String()
-		if possResend.FIXBoolean {
+
+		if bytes.Equal(possResend.Write(), []byte("Y")) {
 			if e.OrderIds[sessionOrderID] {
 				return nil
 			}
@@ -67,7 +75,7 @@ func (e *EchoApplication) processMsg(msg *quickfix.Message, sessionID quickfix.S
 	}
 
 	reply := copyMessage(msg)
-	if possResend.FIXBoolean {
+	if bytes.Equal(possResend.Write(), []byte("Y")) {
 		reply.Header.Set(possResend)
 	}
 
@@ -90,7 +98,7 @@ func copyMessage(msg *quickfix.Message) *quickfix.Message {
 
 func main() {
 	app := &EchoApplication{}
-	app.log = log.New(ioutil.Discard, "", log.LstdFlags)
+	app.log = log.New(io.Discard, "", log.LstdFlags)
 	//app.log = log.New(os.Stdout, "", log.LstdFlags)
 
 	router.AddRoute(quickfix.BeginStringFIX40, "D", app.processMsg)
@@ -109,6 +117,7 @@ func main() {
 	router.AddRoute(quickfix.ApplVerIDFIX50SP1, "d", app.processMsg)
 	router.AddRoute(quickfix.ApplVerIDFIX50SP2, "d", app.processMsg)
 
+	fmt.Println("starting test server")
 	cfg, err := os.Open(os.Args[1])
 	if err != nil {
 		fmt.Printf("Error opening %v, %v\n", os.Args[1], err)
@@ -128,7 +137,34 @@ func main() {
 		return
 	}
 
-	acceptor, err := quickfix.NewAcceptor(app, quickfix.NewMemoryStoreFactory(), appSettings, fileLogFactory)
+	storeType := os.Args[2]
+
+	var acceptor *quickfix.Acceptor
+	switch strings.ToUpper(storeType) {
+	case "MONGO":
+		mongoDbCxn := "mongodb://localhost:27017"
+		mongoDatabase := "automated_testing_database"
+		mongoReplicaSet := "replicaset"
+
+		appSettings.GlobalSettings().Set(config.MongoStoreConnection, mongoDbCxn)
+		appSettings.GlobalSettings().Set(config.MongoStoreDatabase, mongoDatabase)
+		appSettings.GlobalSettings().Set(config.MongoStoreReplicaSet, mongoReplicaSet)
+		appSettings.GlobalSettings().Set(config.DynamicSessions, "Y")
+
+		acceptor, err = quickfix.NewAcceptor(app, mongo.NewStoreFactory(appSettings), appSettings, fileLogFactory)
+	case "FILE":
+		fileStoreRootPath := path.Join(os.TempDir(), fmt.Sprintf("FileStoreTestSuite-%d", os.Getpid()))
+		fileStorePath := path.Join(fileStoreRootPath, fmt.Sprintf("%d", time.Now().UnixNano()))
+		appSettings.GlobalSettings().Set(config.FileStorePath, fileStorePath)
+		appSettings.GlobalSettings().Set(config.DynamicSessions, "Y")
+
+		acceptor, err = quickfix.NewAcceptor(app, file.NewStoreFactory(appSettings), appSettings, fileLogFactory)
+	case "MEMORY":
+		fallthrough
+	default:
+		acceptor, err = quickfix.NewAcceptor(app, quickfix.NewMemoryStoreFactory(), appSettings, fileLogFactory)
+	}
+
 	if err != nil {
 		fmt.Println("Unable to create Acceptor: ", err)
 		return
@@ -139,9 +175,10 @@ func main() {
 		return
 	}
 
-	interrupt := make(chan os.Signal)
-	signal.Notify(interrupt)
-	<-interrupt
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	<-c
+	fmt.Println("stopping test server")
 
 	acceptor.Stop()
 }

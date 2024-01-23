@@ -7,7 +7,6 @@ run:
 linters:
   disable-all: true
   enable:
-    - deadcode
     - dupl
     - gofmt
     - goimports
@@ -17,13 +16,11 @@ linters:
     - misspell
     - revive
     - unused
-    - varcheck
     - staticcheck
+    - godot
 
 linters-settings:
   gofmt:
     simplify: true
-  goimports:
-    local-prefixes: github.com/quickfixgo/quickfix
   dupl:
     threshold: 400
