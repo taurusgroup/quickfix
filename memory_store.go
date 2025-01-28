@@ -97,6 +97,15 @@ func (store *memoryStore) SaveMessageAndIncrNextSenderMsgSeqNum(seqNum int, msg 
 	return store.IncrNextSenderMsgSeqNum()
 }
 
+func (store *memoryStore) SaveBatchAndIncrNextSenderMsgSeqNum(seqNum int, msg [][]byte) error {
+	for offset, m := range msg {
+		if err := store.SaveMessageAndIncrNextSenderMsgSeqNum(seqNum+offset, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (store *memoryStore) IterateMessages(beginSeqNum, endSeqNum int, cb func([]byte) error) error {
 	for seqNum := beginSeqNum; seqNum <= endSeqNum; seqNum++ {
 		if m, ok := store.messageMap[seqNum]; ok {

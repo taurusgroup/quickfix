@@ -64,6 +64,21 @@ func SendToTarget(m Messagable, sessionID SessionID) error {
 	return session.queueForSend(msg)
 }
 
+// SendBatchToTarget sends a batch of messages on the session. The entire batch
+// will fail if the application callback returns an error for any of the
+// messages.
+//
+// This function is more efficient as it calls the store only once for the whole
+// batch.
+func SendBatchToTarget(msgs []Messagable, sessionID SessionID) error {
+	session, ok := lookupSession(sessionID)
+	if !ok {
+		return errUnknownSession
+	}
+
+	return session.queueBatchForSend(msgs)
+}
+
 // ResetSession resets session's sequence numbers.
 func ResetSession(sessionID SessionID) error {
 	session, ok := lookupSession(sessionID)
