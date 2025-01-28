@@ -853,6 +853,25 @@ func (suite *SessionSendTestSuite) TestQueueForSendAdminMessage() {
 	suite.NextSenderMsgSeqNum(2)
 }
 
+func (suite *SessionSendTestSuite) TestQueueBatchForSend() {
+	suite.MockApp.On("ToApp").Return(nil)
+	suite.Require().NoError(suite.queueBatchForSend([]Messagable{suite.NewOrderSingle()}))
+
+	suite.MockApp.AssertExpectations(suite.T())
+	suite.NoMessageSent()
+	suite.MessagePersisted(suite.MockApp.lastToApp)
+	suite.FieldEquals(tagMsgSeqNum, 1, suite.MockApp.lastToApp.Header)
+	suite.NextSenderMsgSeqNum(2)
+}
+
+func (suite *SessionSendTestSuite) TestQueueBatchForSendDoNotSendAdmin() {
+	suite.Require().Error(suite.queueBatchForSend([]Messagable{suite.Heartbeat()}))
+
+	suite.MockApp.AssertExpectations(suite.T())
+	suite.NoMessageSent()
+	suite.NextSenderMsgSeqNum(1)
+}
+
 func (suite *SessionSendTestSuite) TestSendAppMessage() {
 	suite.MockApp.On("ToApp").Return(nil)
 	require.Nil(suite.T(), suite.send(suite.NewOrderSingle()))
