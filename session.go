@@ -54,6 +54,7 @@ type session struct {
 	peerTimer  *internal.EventTimer
 	sentReset  bool
 	stopOnce   sync.Once
+	stopChan   chan struct{} // closed when run() exits; guards stale timer goroutines
 
 	targetDefaultApplVerID string
 
@@ -649,7 +650,13 @@ func (s *session) initiateLogoutInReplyTo(reason string, inReplyTo *Message) (er
 		return
 	}
 	s.log.OnEvent("Inititated logout request")
-	time.AfterFunc(s.LogoutTimeout, func() { s.sessionEvent <- internal.LogoutTimeout })
+	stopChan := s.stopChan
+	time.AfterFunc(s.LogoutTimeout, func() {
+		select {
+		case s.sessionEvent <- internal.LogoutTimeout:
+		case <-stopChan:
+		}
+	})
 	return
 }
 
@@ -924,8 +931,10 @@ func (s *session) onAdmin(msg interface{}) {
 }
 
 func (s *session) run() {
+	s.stopOnce = sync.Once{}
+	s.stopChan = make(chan struct{})
 	s.Start(s)
-	var stopChan = make(chan struct{})
+	var stopChan = s.stopChan
 	s.stateTimer = internal.NewEventTimer(func() {
 		select {
 		// Deadlock in write to chan s.sessionEvent after s.Stopped()==true and end of loop session.go:766 because no reader of chan s.sessionEvent.
