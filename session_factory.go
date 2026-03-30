@@ -239,7 +239,16 @@ func (f sessionFactory) newSession(
 		}
 	}
 
-	if settings.HasSetting(config.StartTime) || settings.HasSetting(config.EndTime) {
+	var nonStopSession bool
+	if settings.HasSetting(config.NonStopSession) {
+		if nonStopSession, err = settings.BoolSetting(config.NonStopSession); err != nil {
+			return
+		}
+	}
+
+	// When NonStopSession=Y, SessionTime stays nil: IsInRange and IsInSameRange always return true,
+	// so the session never resets based on time boundaries.
+	if !nonStopSession && (settings.HasSetting(config.StartTime) || settings.HasSetting(config.EndTime)) {
 		var startTimeStr, endTimeStr string
 		if startTimeStr, err = settings.Setting(config.StartTime); err != nil {
 			return

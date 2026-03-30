@@ -728,6 +728,26 @@ func (s *SessionFactorySuite) TestNewSessionMaxLatency() {
 	s.Equal(session.MaxLatency, 20*time.Second)
 }
 
+func (s *SessionFactorySuite) TestNonStopSession() {
+	s.SessionSettings.Set(config.NonStopSession, "Y")
+	s.SessionSettings.Set(config.StartTime, "00:00:00")
+	s.SessionSettings.Set(config.EndTime, "00:00:00")
+
+	session, err := s.newSession(s.SessionID, s.MessageStoreFactory, s.SessionSettings, s.LogFactory, s.App)
+	s.Nil(err)
+	s.Nil(session.SessionTime, "NonStopSession=Y should leave SessionTime nil")
+}
+
+func (s *SessionFactorySuite) TestNonStopSessionDisabled() {
+	s.SessionSettings.Set(config.NonStopSession, "N")
+	s.SessionSettings.Set(config.StartTime, "00:00:00")
+	s.SessionSettings.Set(config.EndTime, "00:00:00")
+
+	session, err := s.newSession(s.SessionID, s.MessageStoreFactory, s.SessionSettings, s.LogFactory, s.App)
+	s.Nil(err)
+	s.NotNil(session.SessionTime, "NonStopSession=N should still build SessionTime")
+}
+
 func (s *SessionFactorySuite) TestPersistMessages() {
 	var tests = []struct {
 		setting  string

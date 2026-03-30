@@ -328,6 +328,19 @@ const (
 	//	- 00:00:00
 	//  - A time in the format of HH:MM:SS, time is represented in time zone configured by TimeZone
 	ResetSeqTime string = "ResetSeqTime"
+
+	// NonStopSession indicates that the session is active at all times and should never trigger
+	// a time-based session reset. When set to Y, StartTime and EndTime are ignored and the session
+	// will not reset sequence numbers based on time boundaries.
+	//
+	// Required: No
+	//
+	// Default: N
+	//
+	// Valid Values:
+	//  - Y
+	//  - N
+	NonStopSession string = "NonStopSession"
 )
 
 const (
