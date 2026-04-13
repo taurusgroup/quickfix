@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"golang.org/x/net/proxy"
+
+	"github.com/quickfixgo/quickfix/config"
 )
 
 // Initiator initiates connections and processes messages for all sessions.
@@ -37,12 +39,19 @@ type Initiator struct {
 	stopChan        chan interface{}
 	wg              sync.WaitGroup
 	sessions        map[SessionID]*session
+	writeTimeout    time.Duration
 	sessionFactory
 }
 
 // Start Initiator.
 func (i *Initiator) Start() (err error) {
 	i.stopChan = make(chan interface{})
+
+	if i.settings.GlobalSettings().HasSetting(config.SocketWriteTimeout) {
+		if i.writeTimeout, err = i.settings.GlobalSettings().DurationSetting(config.SocketWriteTimeout); err != nil {
+			return
+		}
+	}
 
 	for sessionID, settings := range i.sessionSettings {
 		// TODO: move into session factory.
@@ -215,7 +224,7 @@ func (i *Initiator) handleConnection(session *session, tlsConfig *tls.Config, di
 		go readLoop(newParser(bufio.NewReader(netConn)), msgIn, session.log)
 		disconnected = make(chan interface{})
 		go func() {
-			writeLoop(netConn, msgOut, session.log)
+			writeLoop(netConn, msgOut, session.log, i.writeTimeout)
 			if err := netConn.Close(); err != nil {
 				session.log.OnEvent(err.Error())
 			}

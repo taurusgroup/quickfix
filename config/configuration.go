@@ -583,6 +583,26 @@ const (
 	//  - A valid go time.Duration
 	SocketTimeout string = "SocketTimeout"
 
+	// SocketWriteTimeout sets a per-write deadline on the underlying
+	// net.Conn so that connection.Write cannot block indefinitely when the
+	// remote peer is silently unresponsive (half-open TCP connection). When
+	// the deadline expires the write loop exits and the connection is torn
+	// down, which allows the session to be cleaned up and unregistered.
+	// When set to 0 (the default) the legacy behaviour is preserved and
+	// writes can block up to the OS TCP retransmission timeout.
+	//
+	// Example Values:
+	//  - SocketWriteTimeout=30s
+	//  - SocketWriteTimeout=1m
+	//
+	// Required: No
+	//
+	// Default: 0 (no timeout)
+	//
+	// Valid Values:
+	//  - A valid go time.Duration
+	SocketWriteTimeout string = "SocketWriteTimeout"
+
 	// ProxyType sets the type of proxy server to connect to.
 	// Only used for initiators.
 	//

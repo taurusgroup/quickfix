@@ -15,18 +15,59 @@
 
 package quickfix
 
-import "io"
+import (
+	"io"
+	"time"
+)
 
-func writeLoop(connection io.Writer, messageOut chan []byte, log Log) {
+// writeDeadliner is satisfied by net.Conn. It is defined separately so that
+// writeLoop remains testable with plain io.Writer implementations such as
+// *bytes.Buffer.
+type writeDeadliner interface {
+	SetWriteDeadline(t time.Time) error
+}
+
+// writeLoop consumes outgoing messages from messageOut and writes them to
+// connection. When writeTimeout > 0 and connection supports deadlines, each
+// Write is bounded by the deadline so that an unresponsive peer cannot block
+// the loop indefinitely (for instance when the OS TCP send buffer fills on a
+// half-open connection).
+//
+// When a write returns an error, writeLoop spawns a goroutine that drains
+// messageOut and then returns. Draining is required because the session's
+// run() goroutine may be blocked on a synchronous send to messageOut (e.g.
+// sendBytes(msg, true) for heartbeats and test requests); without draining,
+// the session would remain deadlocked and could not process the subsequent
+// disconnect event. Returning from writeLoop lets the caller close the
+// underlying connection, which in turn unblocks readLoop and triggers the
+// session's normal disconnect handling.
+func writeLoop(connection io.Writer, messageOut chan []byte, log Log, writeTimeout time.Duration) {
+	deadliner, canDeadline := connection.(writeDeadliner)
+
 	for {
 		msg, ok := <-messageOut
 		if !ok {
 			return
 		}
 
+		if canDeadline && writeTimeout > 0 {
+			_ = deadliner.SetWriteDeadline(time.Now().Add(writeTimeout))
+		}
+
 		if _, err := connection.Write(msg); err != nil {
 			log.OnEvent(err.Error())
+			go drainMessageOut(messageOut)
+			return
 		}
+	}
+}
+
+// drainMessageOut discards messages pushed to messageOut until it is closed.
+// It unblocks any goroutine synchronously sending to messageOut (typically
+// the session's run goroutine in sendBytes) so the session can proceed to its
+// disconnect handling, which is what ultimately closes messageOut.
+func drainMessageOut(messageOut chan []byte) {
+	for range messageOut {
 	}
 }
 

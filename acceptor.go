@@ -24,6 +24,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
 
@@ -49,6 +50,7 @@ type Acceptor struct {
 	listeners             map[string]net.Listener
 	connectionValidator   ConnectionValidator
 	tlsConfig             *tls.Config
+	writeTimeout          time.Duration
 	sessionFactory
 }
 
@@ -88,6 +90,12 @@ func (a *Acceptor) Start() (err error) {
 			return
 		}
 		a.tlsConfig = tlsConfig
+	}
+
+	if a.settings.GlobalSettings().HasSetting(config.SocketWriteTimeout) {
+		if a.writeTimeout, err = a.settings.GlobalSettings().DurationSetting(config.SocketWriteTimeout); err != nil {
+			return
+		}
 	}
 
 	var useTCPProxy bool
@@ -363,7 +371,7 @@ func (a *Acceptor) handleConnection(netConn net.Conn) {
 		readLoop(parser, msgIn, a.globalLog)
 	}()
 
-	writeLoop(netConn, msgOut, a.globalLog)
+	writeLoop(netConn, msgOut, a.globalLog, a.writeTimeout)
 }
 
 func (a *Acceptor) dynamicSessionsLoop() {

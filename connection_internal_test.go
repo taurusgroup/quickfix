@@ -17,8 +17,10 @@ package quickfix
 
 import (
 	"bytes"
+	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteLoop(t *testing.T) {
@@ -31,13 +33,72 @@ func TestWriteLoop(t *testing.T) {
 		msgOut <- []byte("test msg 3")
 		close(msgOut)
 	}()
-	writeLoop(writer, msgOut, nullLog{})
+	writeLoop(writer, msgOut, nullLog{}, 0)
 
 	expected := "test msg 1 test msg 2 test msg 3"
 
 	if writer.String() != expected {
 		t.Errorf("expected %v got %v", expected, writer.String())
 	}
+}
+
+func TestWriteLoop_AppliesWriteDeadline(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	msgOut := make(chan []byte, 1)
+	msgOut <- []byte("test")
+	// Do not close msgOut — we expect writeLoop to return on write error.
+
+	done := make(chan struct{})
+	go func() {
+		writeLoop(server, msgOut, nullLog{}, 50*time.Millisecond)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// writeLoop returned after deadline fired on net.Pipe (nobody reads)
+	case <-time.After(2 * time.Second):
+		t.Fatal("writeLoop did not return after write deadline expired")
+	}
+}
+
+func TestWriteLoop_DrainsMessageOutAfterError(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	msgOut := make(chan []byte)
+
+	// Kick off writeLoop; the first write will time out because net.Pipe
+	// has no buffering and nobody is reading from client.
+	writeLoopDone := make(chan struct{})
+	go func() {
+		writeLoop(server, msgOut, nullLog{}, 50*time.Millisecond)
+		close(writeLoopDone)
+	}()
+
+	msgOut <- []byte("first") // triggers Write, which times out
+	<-writeLoopDone
+
+	// Subsequent synchronous sends must not block — the drain goroutine
+	// should be receiving them.
+	sent := make(chan struct{})
+	go func() {
+		msgOut <- []byte("after-error")
+		close(sent)
+	}()
+
+	select {
+	case <-sent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("post-error send blocked — drain goroutine not running")
+	}
+
+	// Closing messageOut terminates the drain goroutine.
+	close(msgOut)
 }
 
 func TestReadLoop(t *testing.T) {
